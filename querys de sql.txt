@@ -1,0 +1,81 @@
+-- Query 1: Tabla base--
+
+SELECT
+  hs.order_id,
+  hs.customer_id,
+  hs.canal_adquisicion,
+  hs.order_purchase_timestamp,
+  oi.product_id,
+  oi.price,
+  oi.freight_value,
+  (oi.price + oi.freight_value) AS ingreso_bruto,
+  p.product_category_name,
+  c.customer_state
+FROM `southern-branch-477522-t2.olist_hotsale.olist_orders_dataset_hotsale - hot_sale_nov_2017_` hs
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_order_items_dataset` oi 
+  ON hs.order_id = oi.order_id
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_products_dataset` p 
+  ON oi.product_id = p.product_id
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_customers_dataset` c 
+  ON hs.customer_id = c.customer_id
+
+-- Query 2: ROI por canal--
+
+  SELECT
+  base.canal_adquisicion,
+  ROUND(SUM(base.ingreso_bruto), 2) AS ingreso_bruto_total,
+  ROUND(SUM(base.ingreso_bruto * COALESCE(m.margen_pct, 0.25)), 2) AS ganancia_neta,
+  cc.costo_usd,
+  ROUND(SUM(base.ingreso_bruto * COALESCE(m.margen_pct, 0.25)) - cc.costo_usd, 2) AS resultado_neto,
+  ROUND(
+    (SUM(base.ingreso_bruto * COALESCE(m.margen_pct, 0.25)) - cc.costo_usd) 
+    / NULLIF(cc.costo_usd, 0) * 100, 2
+  ) AS roi_pct
+FROM (
+  SELECT
+    hs.order_id,
+    hs.canal_adquisicion,
+    oi.price,
+    oi.freight_value,
+    (oi.price + oi.freight_value) AS ingreso_bruto,
+    p.product_category_name
+  FROM `southern-branch-477522-t2.olist_hotsale.olist_orders_dataset_hotsale - hot_sale_nov_2017_` hs
+  LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_order_items_dataset` oi ON hs.order_id = oi.order_id
+  LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_products_dataset` p ON oi.product_id = p.product_id
+) base
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.margenes_` m 
+  ON base.product_category_name = m.categoria_original
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_orders_dataset_hotsale - costos_campaña` cc 
+  ON base.canal_adquisicion = cc.canal_adquisicion
+GROUP BY base.canal_adquisicion, cc.costo_usd
+ORDER BY roi_pct DESC
+
+-- Query 3: Ticket por región--
+
+SELECT
+  c.customer_state,
+  COUNT(DISTINCT hs.order_id) AS total_pedidos,
+  ROUND(AVG(oi.price), 2) AS ticket_promedio,
+  ROUND(SUM(oi.price + oi.freight_value), 2) AS ingreso_total
+FROM `southern-branch-477522-t2.olist_hotsale.olist_orders_dataset_hotsale - hot_sale_nov_2017_` hs
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_order_items_dataset` oi 
+  ON hs.order_id = oi.order_id
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_customers_dataset` c 
+  ON hs.customer_id = c.customer_id
+GROUP BY c.customer_state
+ORDER BY total_pedidos DESC
+LIMIT 10
+
+
+
+-- Query 4: Tendencia diaria-- 
+
+SELECT
+  DATE(hs.order_purchase_timestamp) AS fecha,
+  COUNT(DISTINCT hs.order_id) AS total_pedidos,
+  ROUND(SUM(oi.price + oi.freight_value), 2) AS ingreso_diario
+FROM `southern-branch-477522-t2.olist_hotsale.olist_orders_dataset_hotsale - hot_sale_nov_2017_` hs
+LEFT JOIN `southern-branch-477522-t2.olist_hotsale.olist_order_items_dataset` oi 
+  ON hs.order_id = oi.order_id
+GROUP BY fecha
+ORDER BY fecha ASC
